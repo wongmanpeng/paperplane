@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>3D纸飞机星空大作战</title>
+    <title>3D纸飞机星空大作战 - 音乐增强版</title>
     <style>
         body { margin: 0; overflow: hidden; background: #010816; font-family: 'Microsoft YaHei', sans-serif; cursor: none; }
         canvas { display: block; }
@@ -12,11 +12,13 @@
             color: #50E3C2; font-size: 26px; font-weight: bold; text-shadow: 0 0 10px rgba(80,227,194,0.5);
             pointer-events: none;
         }
-        #msg {
+        /* 开始界面和结束界面 */
+        .overlay {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; color: white; background: rgba(255,255,255,0.1); 
-            backdrop-filter: blur(15px); padding: 50px; border-radius: 40px; display: none;
+            text-align: center; color: white; background: rgba(0,0,0,0.7); 
+            backdrop-filter: blur(15px); padding: 50px; border-radius: 40px; 
             border: 3px solid #50E3C2; box-shadow: 0 0 30px rgba(80,227,194,0.3);
+            z-index: 100;
         }
         button { padding: 15px 40px; font-size: 24px; background: #50E3C2; border: none; border-radius: 50px; cursor: pointer; color: #010816; font-weight: bold; transition: 0.3s; }
         button:hover { transform: scale(1.1); box-shadow: 0 0 20px #50E3C2; }
@@ -30,7 +32,13 @@
     <div id="score">✨ 0</div>
 </div>
 
-<div id="msg">
+<div id="startScreen" class="overlay">
+    <h1>🚀 纸飞机星空大作战</h1>
+    <p>准备好出发了吗？</p>
+    <button onclick="startGame()">开始挑战</button>
+</div>
+
+<div id="msg" class="overlay" style="display:none;">
     <h1 id="title">游戏结束</h1>
     <p id="final-score" style="font-size: 30px; margin: 20px 0;"></p>
     <button onclick="location.reload()">再来一局</button>
@@ -45,13 +53,58 @@ const uiLives = document.getElementById('lives');
 const uiTimer = document.getElementById('timer');
 const uiScore = document.getElementById('score');
 const msgBox = document.getElementById('msg');
+const startScreen = document.getElementById('startScreen');
 
 // 游戏逻辑变量
-let score = 0, lives = 3, timeLeft = 60, gameOver = false;
+let score = 0, lives = 3, timeLeft = 60, gameOver = true;
 let playerX = window.innerWidth / 2;
 let bullets = [], enemies = [], stars = [], frameCount = 0;
 
-// 初始化
+// 音频上下文
+let audioCtx;
+function playBiuSound() {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// 启动游戏
+function startGame() {
+    // 激活音效系统
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 播放背景音乐
+    const bgMusic = new Audio('bgm.mp3'); // 确保文件名叫 bgm.mp3
+    bgMusic.loop = true; // 设置循环播放
+    bgMusic.volume = 0.5; // 音量调小一点，不刺耳
+    bgMusic.play().catch(e => console.log("音乐播放被拦截:", e));
+    
+    startScreen.style.display = 'none';
+    gameOver = false;
+    
+    // 启动计时器
+    const gameInterval = setInterval(() => {
+        if (!gameOver) {
+            timeLeft--;
+            uiTimer.innerText = `⏱️ ${timeLeft}s`;
+            if (timeLeft <= 0) {
+                end(true, gameInterval);
+                bgMusic.pause(); // 游戏结束停止音乐
+            }
+        }
+    }, 1000);
+    draw();
+}
+
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -60,42 +113,28 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// 操作：支持鼠标和键盘
 window.addEventListener('mousemove', (e) => playerX = e.clientX);
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') playerX -= 50;
-    if (e.key === 'ArrowRight') playerX += 50;
-});
 
-// 60秒倒计时
-const gameInterval = setInterval(() => {
-    if (!gameOver) {
-        timeLeft--;
-        uiTimer.innerText = `⏱️ ${timeLeft}s`;
-        if (timeLeft <= 0) end(true);
-    }
-}, 1000);
-
-// 创建“立体”飞机
 function createEnemy() {
     const isBig = Math.random() > 0.8;
     enemies.push({
         x: 60 + Math.random() * (canvas.width - 120),
         y: -100,
         size: isBig ? 70 : 45,
-        speed: isBig ? 1.2 : 1.8, // 极其平缓的速度
-        hue: Math.random() * 360,
-        rotate: (Math.random() - 0.5) * 0.2 // 稍微有一点点倾斜，更立体
+        speed: isBig ? 1.1 : 1.6, // 适合7岁孩子的超慢速
+        hue: Math.random() * 360
     });
 }
 
-// 核心函数：绘制带折痕感的“3D”纸飞机
 function draw3DPlane(x, y, size, hue, isPlayer = false) {
     ctx.save();
     ctx.translate(x, y);
-    if (!isPlayer) ctx.rotate(Math.PI + (enemies[0]?.rotate || 0)); // 敌机头朝下
+    if (!isPlayer) ctx.rotate(Math.PI);
+    
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = `hsl(${hue}, 80%, 50%)`;
 
-    // 1. 绘制左翼（深色区）
+    // 左翼
     ctx.fillStyle = `hsl(${hue}, 70%, 40%)`;
     ctx.beginPath();
     ctx.moveTo(0, -size);
@@ -103,26 +142,13 @@ function draw3DPlane(x, y, size, hue, isPlayer = false) {
     ctx.lineTo(0, size/4);
     ctx.fill();
 
-    // 2. 绘制右翼（浅色区，模拟光照）
-    ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+    // 右翼
+    ctx.fillStyle = `hsl(${hue}, 70%, 65%)`;
     ctx.beginPath();
     ctx.moveTo(0, -size);
     ctx.lineTo(size, size/2);
     ctx.lineTo(0, size/4);
     ctx.fill();
-
-    // 3. 绘制中间折痕线
-    ctx.strokeStyle = `rgba(255,255,255,0.3)`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, -size);
-    ctx.lineTo(0, size/4);
-    ctx.stroke();
-
-    // 4. 外发光（模拟霓虹效果，方便在深色背景看清）
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = `hsl(${hue}, 80%, 50%)`;
-    ctx.stroke();
 
     ctx.restore();
 }
@@ -130,8 +156,7 @@ function draw3DPlane(x, y, size, hue, isPlayer = false) {
 function update() {
     if (gameOver) return;
 
-    // 自动开火 (慢速连发，不晃眼)
-    if (frameCount % 18 === 0) {
+    if (frameCount % 20 === 0) {
         bullets.push({ x: playerX, y: canvas.height - 80 });
     }
 
@@ -140,7 +165,7 @@ function update() {
         if (b.y < 0) bullets.splice(i, 1);
     });
 
-    if (frameCount % 70 === 0) createEnemy();
+    if (frameCount % 75 === 0) createEnemy();
     
     enemies.forEach((e, i) => {
         e.y += e.speed;
@@ -151,9 +176,9 @@ function update() {
             if (lives <= 0) end(false);
         }
 
-        // 碰撞检测
         bullets.forEach((b, bi) => {
             if (Math.hypot(e.x - b.x, e.y - b.y) < e.size) {
+                playBiuSound(); // 触发Biu音效
                 enemies.splice(i, 1);
                 bullets.splice(bi, 1);
                 score += (e.size > 50 ? 5 : 15);
@@ -165,49 +190,39 @@ function update() {
 }
 
 function draw() {
-    // 渐变深色背景
-    let grd = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 5, canvas.width/2, canvas.height/2, canvas.width);
-    grd.addColorStop(0, "#0a1931");
-    grd.addColorStop(1, "#010816");
-    ctx.fillStyle = grd;
+    if (gameOver && timeLeft <= 0) return;
+    
+    ctx.fillStyle = '#010816';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 绘制闪烁星空
     stars.forEach(s => {
         ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(Math.sin(frameCount*0.02 + s.o*10))})`;
-        ctx.fillRect(s.x, (s.y + frameCount*0.3)%canvas.height, s.s, s.s);
+        ctx.fillRect(s.x, (s.y + frameCount*0.2)%canvas.height, s.s, s.s);
     });
 
-    // 绘制流光子弹
     bullets.forEach(b => {
         ctx.fillStyle = '#50E3C2';
         ctx.shadowBlur = 10;
         ctx.shadowColor = "#50E3C2";
         ctx.beginPath();
-        ctx.arc(b.x, b.y, 4, 0, Math.PI*2);
+        ctx.arc(b.x, b.y, 5, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // 绘制敌机
     enemies.forEach(e => draw3DPlane(e.x, e.y, e.size, e.hue));
+    draw3DPlane(playerX, canvas.height - 80, 50, 180, true);
 
-    // 绘制玩家飞机 (纯白色立体)
-    draw3DPlane(playerX, canvas.height - 80, 50, 0, true);
-
-    requestAnimationFrame(() => {
-        update();
-        draw();
-    });
+    update();
+    requestAnimationFrame(draw);
 }
 
-function end(win) {
+function end(win, interval) {
+    clearInterval(interval);
     gameOver = true;
     msgBox.style.display = 'block';
-    document.getElementById('title').innerText = win ? "🌟 太棒了，小机长！" : "🚀 下次一定能成功！";
+    document.getElementById('title').innerText = win ? "🌟 任务圆满完成！" : "🚀 没关系，再练一次吧！";
     document.getElementById('final-score').innerText = `最终得分: ${score}`;
 }
-
-draw();
 </script>
 </body>
 </html>
