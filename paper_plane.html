@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>3D纸飞机星空大作战</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #010816; font-family: 'Microsoft YaHei', sans-serif; cursor: none; }
+        canvas { display: block; }
+        #ui {
+            position: absolute; top: 15px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between;
+            color: #50E3C2; font-size: 26px; font-weight: bold; text-shadow: 0 0 10px rgba(80,227,194,0.5);
+            pointer-events: none;
+        }
+        #msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: white; background: rgba(255,255,255,0.1); 
+            backdrop-filter: blur(15px); padding: 50px; border-radius: 40px; display: none;
+            border: 3px solid #50E3C2; box-shadow: 0 0 30px rgba(80,227,194,0.3);
+        }
+        button { padding: 15px 40px; font-size: 24px; background: #50E3C2; border: none; border-radius: 50px; cursor: pointer; color: #010816; font-weight: bold; transition: 0.3s; }
+        button:hover { transform: scale(1.1); box-shadow: 0 0 20px #50E3C2; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div id="lives">❤️ ❤️ ❤️</div>
+    <div id="timer">⏱️ 60s</div>
+    <div id="score">✨ 0</div>
+</div>
+
+<div id="msg">
+    <h1 id="title">游戏结束</h1>
+    <p id="final-score" style="font-size: 30px; margin: 20px 0;"></p>
+    <button onclick="location.reload()">再来一局</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const uiLives = document.getElementById('lives');
+const uiTimer = document.getElementById('timer');
+const uiScore = document.getElementById('score');
+const msgBox = document.getElementById('msg');
+
+// 游戏逻辑变量
+let score = 0, lives = 3, timeLeft = 60, gameOver = false;
+let playerX = window.innerWidth / 2;
+let bullets = [], enemies = [], stars = [], frameCount = 0;
+
+// 初始化
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = Array.from({length: 120}, () => ({x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*3, o: Math.random()}));
+}
+window.addEventListener('resize', resize);
+resize();
+
+// 操作：支持鼠标和键盘
+window.addEventListener('mousemove', (e) => playerX = e.clientX);
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') playerX -= 50;
+    if (e.key === 'ArrowRight') playerX += 50;
+});
+
+// 60秒倒计时
+const gameInterval = setInterval(() => {
+    if (!gameOver) {
+        timeLeft--;
+        uiTimer.innerText = `⏱️ ${timeLeft}s`;
+        if (timeLeft <= 0) end(true);
+    }
+}, 1000);
+
+// 创建“立体”飞机
+function createEnemy() {
+    const isBig = Math.random() > 0.8;
+    enemies.push({
+        x: 60 + Math.random() * (canvas.width - 120),
+        y: -100,
+        size: isBig ? 70 : 45,
+        speed: isBig ? 1.2 : 1.8, // 极其平缓的速度
+        hue: Math.random() * 360,
+        rotate: (Math.random() - 0.5) * 0.2 // 稍微有一点点倾斜，更立体
+    });
+}
+
+// 核心函数：绘制带折痕感的“3D”纸飞机
+function draw3DPlane(x, y, size, hue, isPlayer = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (!isPlayer) ctx.rotate(Math.PI + (enemies[0]?.rotate || 0)); // 敌机头朝下
+
+    // 1. 绘制左翼（深色区）
+    ctx.fillStyle = `hsl(${hue}, 70%, 40%)`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(-size, size/2);
+    ctx.lineTo(0, size/4);
+    ctx.fill();
+
+    // 2. 绘制右翼（浅色区，模拟光照）
+    ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(size, size/2);
+    ctx.lineTo(0, size/4);
+    ctx.fill();
+
+    // 3. 绘制中间折痕线
+    ctx.strokeStyle = `rgba(255,255,255,0.3)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(0, size/4);
+    ctx.stroke();
+
+    // 4. 外发光（模拟霓虹效果，方便在深色背景看清）
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = `hsl(${hue}, 80%, 50%)`;
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function update() {
+    if (gameOver) return;
+
+    // 自动开火 (慢速连发，不晃眼)
+    if (frameCount % 18 === 0) {
+        bullets.push({ x: playerX, y: canvas.height - 80 });
+    }
+
+    bullets.forEach((b, i) => {
+        b.y -= 7;
+        if (b.y < 0) bullets.splice(i, 1);
+    });
+
+    if (frameCount % 70 === 0) createEnemy();
+    
+    enemies.forEach((e, i) => {
+        e.y += e.speed;
+        if (e.y > canvas.height + 50) {
+            enemies.splice(i, 1);
+            lives--;
+            uiLives.innerText = '❤️ '.repeat(Math.max(0, lives));
+            if (lives <= 0) end(false);
+        }
+
+        // 碰撞检测
+        bullets.forEach((b, bi) => {
+            if (Math.hypot(e.x - b.x, e.y - b.y) < e.size) {
+                enemies.splice(i, 1);
+                bullets.splice(bi, 1);
+                score += (e.size > 50 ? 5 : 15);
+                uiScore.innerText = `✨ ${score}`;
+            }
+        });
+    });
+    frameCount++;
+}
+
+function draw() {
+    // 渐变深色背景
+    let grd = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 5, canvas.width/2, canvas.height/2, canvas.width);
+    grd.addColorStop(0, "#0a1931");
+    grd.addColorStop(1, "#010816");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 绘制闪烁星空
+    stars.forEach(s => {
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(Math.sin(frameCount*0.02 + s.o*10))})`;
+        ctx.fillRect(s.x, (s.y + frameCount*0.3)%canvas.height, s.s, s.s);
+    });
+
+    // 绘制流光子弹
+    bullets.forEach(b => {
+        ctx.fillStyle = '#50E3C2';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#50E3C2";
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 4, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // 绘制敌机
+    enemies.forEach(e => draw3DPlane(e.x, e.y, e.size, e.hue));
+
+    // 绘制玩家飞机 (纯白色立体)
+    draw3DPlane(playerX, canvas.height - 80, 50, 0, true);
+
+    requestAnimationFrame(() => {
+        update();
+        draw();
+    });
+}
+
+function end(win) {
+    gameOver = true;
+    msgBox.style.display = 'block';
+    document.getElementById('title').innerText = win ? "🌟 太棒了，小机长！" : "🚀 下次一定能成功！";
+    document.getElementById('final-score').innerText = `最终得分: ${score}`;
+}
+
+draw();
+</script>
+</body>
+</html>
