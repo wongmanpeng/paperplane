@@ -2,6 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>3D纸飞机星空大作战 - 音乐增强版</title>
     <style>
         body { margin: 0; overflow: hidden; background: #010816; font-family: 'Microsoft YaHei', sans-serif; cursor: none; }
@@ -22,6 +23,15 @@
         }
         button { padding: 15px 40px; font-size: 24px; background: #50E3C2; border: none; border-radius: 50px; cursor: pointer; color: #010816; font-weight: bold; transition: 0.3s; }
         button:hover { transform: scale(1.1); box-shadow: 0 0 20px #50E3C2; }
+        
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            #ui { font-size: 16px; top: 10px; left: 10px; right: 10px; }
+            .overlay { padding: 25px; width: 85%; box-sizing: border-box; border-radius: 20px; }
+            button { padding: 12px 24px; font-size: 18px; }
+            h1 { font-size: 22px; }
+            p { font-size: 14px; }
+        }
     </style>
 </head>
 <body>
@@ -80,7 +90,12 @@ function playBiuSound() {
 // 启动游戏
 function startGame() {
     // 激活音效系统
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
     
     // 播放背景音乐
     const bgMusic = new Audio('bgm.mp3'); // 确保文件名叫 bgm.mp3
@@ -114,6 +129,20 @@ window.addEventListener('resize', resize);
 resize();
 
 window.addEventListener('mousemove', (e) => playerX = e.clientX);
+
+// 添加移动端触控支持
+window.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 0) {
+        playerX = e.touches[0].clientX;
+    }
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 0) {
+        playerX = e.touches[0].clientX;
+        e.preventDefault(); // 阻止滑动页面的默认行为
+    }
+}, { passive: false });
 
 function createEnemy() {
     const isBig = Math.random() > 0.8;
